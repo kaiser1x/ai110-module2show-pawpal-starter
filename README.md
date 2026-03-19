@@ -40,6 +40,37 @@ Tasks have a `frequency` field (`"once"`, `"daily"`, or `"weekly"`). When `mark_
 
 ---
 
+## Testing PawPal+
+
+### Run the tests
+
+```bash
+python -m pytest
+```
+
+All 38 tests should pass in under a second. No additional setup is required.
+
+### What the tests cover
+
+| Area | Happy-path tests | Edge-case tests |
+|---|---|---|
+| **Task** | starts incomplete, `mark_complete` changes status, idempotent double-complete | — |
+| **Recurrence** | daily advances 1 day, weekly advances 7 days, next occurrence starts incomplete, preserves time & description | `once` returns `None`, weekly boundary date exact |
+| **Pet** | add task increases count, `get_tasks` returns list | starts with zero tasks |
+| **Owner** | `get_pet` returns correct pet, `get_all_tasks` returns tuples | case-insensitive name match, unknown name → `None` |
+| **Sorting** | tasks returned in chronological order | single-task list, already-sorted input, reverse input |
+| **Filtering** | filter by pet name, filter by completion status | empty input list, unknown pet name, combined pet + status filter |
+| **Conflict detection** | two tasks at same slot produce one warning, no conflict when slots differ | three tasks in one slot (one warning), cross-pet same slot, two distinct slots |
+| **Scheduler.mark_task_complete** | marks done, appends next occurrence, `once` adds no new task | unknown pet returns `False` |
+
+### Confidence level
+
+★★★★☆ (4 / 5)
+
+The core scheduling logic — sorting, filtering, recurrence, and conflict detection — is fully tested across both happy paths and realistic edge cases. One star is withheld because the conflict detector only checks for **exact time matches**, not overlapping durations (a known tradeoff documented in `reflection.md §2b`). Adding a `duration_minutes` field in a future iteration would require new tests for that overlap logic.
+
+---
+
 ## Getting started
 
 ### Setup

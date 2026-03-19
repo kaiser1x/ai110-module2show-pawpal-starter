@@ -255,3 +255,170 @@ def test_mark_task_complete_unknown_pet_returns_false():
     """mark_task_complete() should return False for a pet that doesn't exist."""
     s = Scheduler(_build_owner())
     assert s.mark_task_complete("Ghost", "Some task") is False
+
+
+# ── Edge-case tests ────────────────────────────────────────────────────────
+# These cover the "unhappy paths" and boundary conditions requested in Step 1.
+
+
+# Edge: sorting
+
+def test_sort_single_task_returns_one_item():
+    """sort_by_time() with a single task should return a list of length one."""
+    owner = Owner(name="Alex")
+    pet = make_pet()
+    pet.add_task(make_task(due_time="09:00"))
+    owner.add_pet(pet)
+    s = Scheduler(owner)
+    tasks = s.get_tasks_for_date("2026-03-18")
+    assert len(s.sort_by_time(tasks)) == 1
+
+
+def test_sort_already_ordered_input_unchanged():
+    """sort_by_time() on an already-sorted list should return the same order."""
+    owner = Owner(name="Alex")
+    pet = make_pet()
+    pet.add_task(make_task(description="First",  due_time="07:00"))
+    pet.add_task(make_task(description="Second", due_time="12:00"))
+    pet.add_task(make_task(description="Third",  due_time="18:00"))
+    owner.add_pet(pet)
+    s = Scheduler(owner)
+    tasks = s.get_tasks_for_date("2026-03-18")
+    result = s.sort_by_time(tasks)
+    assert [t.due_time for _, t in result] == ["07:00", "12:00", "18:00"]
+
+
+def test_sort_reverse_order_input():
+    """sort_by_time() should correctly reorder tasks added in reverse time order."""
+    owner = Owner(name="Alex")
+    pet = make_pet()
+    pet.add_task(make_task(description="Late",  due_time="20:00"))
+    pet.add_task(make_task(description="Mid",   due_time="12:00"))
+    pet.add_task(make_task(description="Early", due_time="06:00"))
+    owner.add_pet(pet)
+    s = Scheduler(owner)
+    tasks = s.get_tasks_for_date("2026-03-18")
+    result = s.sort_by_time(tasks)
+    descriptions = [t.description for _, t in result]
+    assert descriptions == ["Early", "Mid", "Late"]
+
+
+# Edge: pet with no tasks
+
+def test_pet_with_no_tasks_returns_empty_schedule():
+    """A pet that has no tasks should contribute nothing to the day's schedule."""
+    owner = Owner(name="Alex")
+    owner.add_pet(make_pet(name="Ghostcat"))
+    s = Scheduler(owner)
+    assert s.get_tasks_for_date("2026-03-18") == []
+
+
+def test_owner_with_no_pets_returns_empty_schedule():
+    """An owner who has added no pets should have an empty schedule for any date."""
+    s = Scheduler(Owner(name="Empty"))
+    assert s.get_tasks_for_date("2026-03-18") == []
+
+
+def test_filter_on_empty_list_returns_empty():
+    """filter_tasks() on an empty input list should return an empty list."""
+    s = Scheduler(Owner(name="Empty"))
+    assert s.filter_tasks([], pet_name="Buddy", completed=False) == []
+
+
+# Edge: recurrence boundary
+
+def test_weekly_next_occurrence_correct_date():
+    """A weekly task marked complete should produce a task exactly 7 days later."""
+    owner = Owner(name="Alex")
+    pet = make_pet(name="Buddy")
+    pet.add_task(Task("Bath time", "2026-03-18", "10:00", "weekly"))
+    owner.add_pet(pet)
+    s = Scheduler(owner)
+    s.mark_task_complete("Buddy", "Bath time")
+    next_tasks = [t for t in pet.get_tasks() if not t.completed]
+    assert len(next_tasks) == 1
+    assert next_tasks[0].due_date == "2026-03-25"
+
+
+def test_recurring_task_preserves_time_and_description():
+    """The next occurrence of a recurring task should keep the same time and description."""
+    owner = Owner(name="Alex")
+    pet = make_pet(name="Buddy")
+    pet.add_task(Task("Dinner", "2026-03-18", "17:30", "daily"))
+    owner.add_pet(pet)
+    s = Scheduler(owner)
+    s.mark_task_complete("Buddy", "Dinner")
+    new_task = [t for t in pet.get_tasks() if not t.completed][0]
+    assert new_task.description == "Dinner"
+    assert new_task.due_time == "17:30"
+
+
+# Edge: conflict detection
+
+def test_detect_conflicts_three_tasks_same_slot():
+    """detect_conflicts() should still produce one warning when 3 tasks share a time slot."""
+    owner = Owner(name="Alex")
+    pet = make_pet()
+    for i in range(3):
+        pet.add_task(Task(f"Task {i}", "2026-03-18", "10:00", "once"))
+    owner.add_pet(pet)
+    s = Scheduler(owner)
+    warnings = s.detect_conflicts(s.get_tasks_for_date("2026-03-18"))
+    assert len(warnings) == 1
+    assert "10:00" in warnings[0]
+
+
+def test_detect_conflicts_two_separate_slots_no_conflict():
+    """Two tasks at different times for the same pet should not trigger a conflict."""
+    owner = Owner(name="Alex")
+    pet = make_pet()
+    pet.add_task(make_task(due_time="09:00"))
+    pet.add_task(make_task(due_time="10:00"))
+    owner.add_pet(pet)
+    s = Scheduler(owner)
+    assert s.detect_conflicts(s.get_tasks_for_date("2026-03-18")) == []
+
+
+def test_detect_conflicts_cross_pet_same_slot():
+    """detect_conflicts() should flag a conflict between two different pets at the same time."""
+    owner = Owner(name="Alex")
+    buddy = make_pet(name="Buddy")
+    luna  = make_pet(name="Luna")
+    buddy.add_task(Task("Walk",    "2026-03-18", "08:00", "once"))
+    luna.add_task( Task("Feeding", "2026-03-18", "08:00", "once"))
+    owner.add_pet(buddy)
+    owner.add_pet(luna)
+    s = Scheduler(owner)
+    warnings = s.detect_conflicts(s.get_tasks_for_date("2026-03-18"))
+    assert len(warnings) == 1
+    assert "Buddy" in warnings[0]
+    assert "Luna" in warnings[0]
+
+
+# Edge: combined filter
+
+def test_filter_combined_pet_and_status():
+    """filter_tasks() with both pet_name and completed should apply both conditions."""
+    owner = Owner(name="Alex")
+    buddy = make_pet(name="Buddy")
+    buddy.add_task(make_task(description="Walk",    due_time="07:00", frequency="daily"))
+    buddy.add_task(make_task(description="Feeding", due_time="18:00", frequency="daily"))
+    owner.add_pet(buddy)
+
+    # Mark one task complete
+    buddy.get_tasks()[0].mark_complete()
+
+    s = Scheduler(owner)
+    tasks = s.get_tasks_for_date("2026-03-18")
+
+    pending_buddy = s.filter_tasks(tasks, pet_name="Buddy", completed=False)
+    assert len(pending_buddy) == 1
+    assert pending_buddy[0][1].description == "Feeding"
+
+
+def test_filter_unknown_pet_name_returns_empty():
+    """filter_tasks() for a pet name that has no tasks should return an empty list."""
+    s = Scheduler(_build_owner())
+    tasks = s.get_tasks_for_date("2026-03-18")
+    result = s.filter_tasks(tasks, pet_name="NoSuchPet")
+    assert result == []
