@@ -101,7 +101,17 @@ class Scheduler:
         ]
 
     def sort_by_time(self, tasks: List[Tuple[str, Task]]) -> List[Tuple[str, Task]]:
-        """Return tasks sorted chronologically by due_time."""
+        """Return a new list of tasks sorted chronologically by due_time.
+
+        Sorting works correctly on plain "HH:MM" strings because that format
+        is lexicographically ordered (e.g. "07:00" < "08:30" < "18:00").
+
+        Args:
+            tasks: A list of (pet_name, Task) tuples to sort.
+
+        Returns:
+            A new list with the same tuples ordered earliest to latest.
+        """
         return sorted(tasks, key=lambda pair: pair[1].due_time)
 
     def filter_tasks(
@@ -110,7 +120,22 @@ class Scheduler:
         pet_name: Optional[str] = None,
         completed: Optional[bool] = None,
     ) -> List[Tuple[str, Task]]:
-        """Filter tasks by pet name and/or completion status; None means no filter applied."""
+        """Return a filtered subset of tasks based on pet name and/or completion status.
+
+        Both filters are optional and compose — passing both narrows the result
+        to tasks that satisfy each condition. Passing neither returns the original
+        list unchanged.
+
+        Args:
+            tasks:     A list of (pet_name, Task) tuples to filter.
+            pet_name:  If provided, keep only tasks belonging to this pet
+                       (case-insensitive). Pass None to skip this filter.
+            completed: If True, keep only completed tasks. If False, keep only
+                       pending tasks. Pass None to skip this filter.
+
+        Returns:
+            A new list containing only the tuples that pass every active filter.
+        """
         result = tasks
 
         if pet_name is not None:
@@ -128,7 +153,20 @@ class Scheduler:
         return result
 
     def detect_conflicts(self, tasks: List[Tuple[str, Task]]) -> List[str]:
-        """Return warning strings for any tasks sharing the exact same date and time."""
+        """Detect scheduling conflicts and return human-readable warning messages.
+
+        Two or more tasks are considered a conflict when they share the exact
+        same due_date and due_time string. Duration overlap is not checked
+        (see reflection.md §2b for the tradeoff reasoning).
+
+        Args:
+            tasks: A list of (pet_name, Task) tuples to inspect.
+
+        Returns:
+            A list of warning strings, one per conflicting time slot.
+            Returns an empty list when no conflicts are found.
+            Example warning: "Conflict at 2026-03-18 08:30 — Buddy: Morning brush, Luna: Litter box cleaning"
+        """
         seen: dict = {}  # key: (due_date, due_time) -> list of (pet_name, description)
         for pet_name, task in tasks:
             key = (task.due_date, task.due_time)
@@ -144,9 +182,23 @@ class Scheduler:
         return warnings
 
     def mark_task_complete(self, pet_name: str, task_description: str) -> bool:
-        """Mark the first matching incomplete task done and schedule the next occurrence if recurring.
+        """Mark the first matching incomplete task done and auto-schedule the next occurrence.
 
-        Returns True if a matching task was found and marked, False otherwise.
+        Searches the named pet's task list for the first incomplete task whose
+        description matches (case-insensitive). If found, it is marked complete
+        and — for daily or weekly tasks — a new Task is appended to the pet's
+        list with the next calculated due_date (today + 1 day or + 7 days).
+
+        Args:
+            pet_name:         Name of the pet whose task should be marked done
+                              (case-insensitive).
+            task_description: Description of the task to mark complete
+                              (case-insensitive, matches the first incomplete
+                              occurrence only).
+
+        Returns:
+            True  if a matching incomplete task was found and marked.
+            False if the pet does not exist or no matching incomplete task was found.
         """
         pet = self.owner.get_pet(pet_name)
         if pet is None:

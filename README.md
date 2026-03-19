@@ -22,6 +22,24 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Smarter Scheduling
+
+PawPal+ goes beyond a plain task list with four scheduling algorithms built into the `Scheduler` class:
+
+**Chronological sorting**
+`sort_by_time()` orders any set of tasks from earliest to latest. It relies on the `"HH:MM"` time format being lexicographically ordered, so no date parsing is needed — a plain `sorted()` with a lambda key is enough.
+
+**Flexible filtering**
+`filter_tasks()` accepts an optional `pet_name` and an optional `completed` flag. Both filters compose: you can ask for "all of Luna's pending tasks today" in one call. Passing `None` for either parameter skips that filter entirely.
+
+**Recurring task automation**
+Tasks have a `frequency` field (`"once"`, `"daily"`, or `"weekly"`). When `mark_task_complete()` is called, it marks the task done *and* uses Python's `timedelta` to calculate the next due date, automatically appending a fresh copy to the pet's task list. The owner never has to re-enter a repeating task.
+
+**Conflict detection**
+`detect_conflicts()` scans a set of tasks and groups them by `(due_date, due_time)`. Any slot with two or more tasks produces a plain-English warning string (e.g. `"Conflict at 2026-03-18 08:30 — Buddy: Morning brush, Luna: Litter box cleaning"`). The method always returns warnings instead of raising exceptions, so the UI can display them gracefully.
+
+---
+
 ## Getting started
 
 ### Setup
